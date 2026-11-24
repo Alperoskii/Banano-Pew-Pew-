@@ -1800,8 +1800,8 @@ function updateBananaRace(dt){
   // Sürtünme
   MG_RACE_SPEED*=Math.pow(0.985,dt*60);
   // ONLINE RACE POSITION SEND
-if(online&&net&&net.state()==='joined'&&time-(MG_RACE_LAST_SEND||0)>.08){
-  MG_RACE_LAST_SEND=time;
+if(online&&net&&net.state()==='joined'&&time-(window.MG_RACE_LAST_SEND||0)>.08){
+  window.MG_RACE_LAST_SEND=time;
 
   net.emit('race',{
     active:true,
@@ -3720,8 +3720,8 @@ if(window.MG_REMOTE_RACE_DATA){
   }
 }
 // REMOTE FOOTBALL SYNC
-if(online && MG_REMOTE_FOOTBALL_DATA && MG_FOOTBALL){
-  const d=MG_REMOTE_FOOTBALL_DATA;
+if(online && window.MG_REMOTE_FOOTBALL_DATA && MG_FOOTBALL){
+  const d=window.MG_REMOTE_FOOTBALL_DATA;
 
   MG_FOOTBALL.position.x +=
     (d.x-MG_FOOTBALL.position.x)*Math.min(1,dt*12);
