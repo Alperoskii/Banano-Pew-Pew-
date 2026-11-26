@@ -4541,7 +4541,10 @@ document.body.appendChild(fpsBox);
 let fpsFrames=0;
 let fpsLastUpdate=performance.now();
 // Ana oyun döngüsü
+let frameLastError = '', frameLastErrorAt = 0;
 function frame(now){
+  requestAnimationFrame(frame);
+  try {
   if(!last) last=now;
   fpsFrames++;
 
@@ -4612,7 +4615,14 @@ if(state!=='play')for(let i=tx.length-1;i>=0;i--){
 }
   sync(dt,time);
   rd.render(sc,cam);
-  requestAnimationFrame(frame);
+  } catch(error) {
+    const message = error && error.message ? error.message : String(error);
+    if (message !== frameLastError || now - frameLastErrorAt > 3000) {
+      console.error('BANANO GAME LOOP ERROR:', error);
+      frameLastError = message;
+      frameLastErrorAt = now;
+    }
+  }
 }
 
 const mG=new THREE.MeshBasicMaterial({color:0x33ff66,transparent:true,opacity:.5}),mR=new THREE.MeshBasicMaterial({color:0xff3344,transparent:true,opacity:.5});
@@ -5579,7 +5589,7 @@ let dome=null;
 function mkDome(){if(dome)sc.remove(dome);const b=sc.background.clone(),hz=b.clone().lerp(new THREE.Color(0xffffff),.22),zn=b.clone().multiplyScalar(.55).lerp(new THREE.Color(0x2a5fb0),.3);
 dome=new THREE.Mesh(new THREE.SphereGeometry(20000,24,12),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:{h:{value:hz},z:{value:zn},s:{value:new THREE.Vector3(.4,.55,.3).normalize()}},
 vertexShader:'varying vec3 v;void main(){v=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-fragmentShader:'varying vec3 v;uniform vec3 h,z,s;void main(){float t=pow(clamp(v.y,0.,1.),.55);vec3 c=mix(h,z,t);float d=max(dot(v,s),0.);c+=vec3(1.,.85,.55)*(pow(d,900.)*2.5+pow(d,40.)*.35);gl_FragColor=vec4(c,1.);#include <tonemapping_fragment>\n#include <encodings_fragment>\n}'}));
+fragmentShader:'varying vec3 v;uniform vec3 h,z,s;void main(){float t=pow(clamp(v.y,0.,1.),.55);vec3 c=mix(h,z,t);float d=max(dot(v,s),0.);c+=vec3(1.,.85,.55)*(pow(d,900.)*2.5+pow(d,40.)*.35);gl_FragColor=vec4(c,1.);\n#include <tonemapping_fragment>\n#include <encodings_fragment>\n}'}));
 dome.renderOrder=-10;dome.frustumCulled=false;sc.add(dome)}
 
 /* ---------- Ağaçlar: çok katmanlı, renk çeşitli taçlar ---------- */
@@ -5714,7 +5724,7 @@ document.head.appendChild(st);
 
 /* ---- Codes: jeder Code nur EINMAL ---- */
 const KNOWN=['ALPEROSKII','BANANOFAN','BANANOEASY','HIBANANA'];
-function codeGuard(e){const i=$$('ci'),c=(i.value||'').trim().toUpperCase();if(c==='MR.ADMIN'){e.stopImmediatePropagation();e.preventDefault();i.value='';ADM.on=1;SS('bpp_adm',ADM);$$('cr').textContent='👑 ADMIN aktiviert!';admin();return}if(!KNOWN.includes(c))return;const u=LS('bpp_codes_used',[]);
+function codeGuard(e){const i=$$('ci'),c=(i.value||'').trim().toUpperCase();if(!KNOWN.includes(c))return;const u=LS('bpp_codes_used',[]);
 if(u.includes(c)){e.stopImmediatePropagation();e.preventDefault();i.value='';$$('cr').textContent='Dieser Code wurde schon eingelöst ✔';return}u.push(c);SS('bpp_codes_used',u)}
 $$('ce').addEventListener('click',codeGuard,true);$$('ci').addEventListener('keydown',e=>{if(e.key==='Enter')codeGuard(e)},true);
 
@@ -5727,7 +5737,7 @@ const _s0=start;start=async function(on){am=[];rl=0;await _s0(on);try{applyLvl()
 const SA={8:'w4',9:'w5',10:'w1',11:'w0',12:'boom',13:'w1',14:'w3',15:'w4',16:'boom',17:'boom'},_sf=sfx;sfx=function(k,...a){const m=/^w(\d+)$/.exec(k);return _sf(m&&+m[1]>7?(SA[+m[1]]||'w0'):k,...a)};
 
 /* ---- Magazin & Nachladen (R), Zubehör, Admin ---- */
-let am=[],rl=0,rw=-1;const gear=LS('bpp_gear',{}),ADM=Object.assign({on:0,god:1,inf:1},LS('bpp_adm',{}));
+let am=[],rl=0,rw=-1;const gear=LS('bpp_gear',{}),ADM={on:0,god:0,inf:0}; // Clientseitige Admin-Cheats deaktiviert; echte Rechte kommen nur vom Server.
 const MAG=[30,5,1,6,100,1,1,3,60,12,1,20,1],RT=[1.2,2,2,2.2,3.5,1.6,2,2.2,2,1.5,1.5,1.4,3];
 const mg=w=>Math.round((MAG[w]||10)*(gear.mag?1.5:1)),rtm=w=>(RT[w]||1.5)*(gear.fast?.7:1);
 function reload(){const p=ps[0];if(!p||rl>0)return;const w=p.w||0;if((am[w]==null?mg(w):am[w])>=mg(w))return;rl=rtm(w);rw=w;try{tone(300,120,.1,.12,'square')}catch(_){}}
@@ -5771,10 +5781,8 @@ cards.onclick=e=>{const b=e.target.closest('button');if(!b)return;const d=b.data
 if(d.l!==undefined){lvl=+d.l;SS('bpp_lvl',lvl);cards.querySelectorAll('[data-l]').forEach(x=>x.classList.toggle('on',x===b))}
 else if(d.q!==undefined){qa=+d.q;SS('bpp_q',qa);window.BPP_Q(qa);cards.querySelectorAll('[data-q]').forEach(x=>x.classList.toggle('on',x===b))}
 else{const m=+d.m;if(m===1)window.BPP_P1();else if(m===2)window.BPP_P1N();else if(m===3)playground();else potShop()}};
-function admin(){if(!ADM.on)return;let a=$$('admc');if(!a){a=document.createElement('div');a.id='admc';a.className='mcx';cards.after(a);
-a.onclick=e=>{const b=e.target.closest('button');if(!b)return;const k=b.dataset.a;if(k==='m')SV.m+=1e6;else if(k==='w')SV.w=WP.map((_,i)=>i);else if(k==='p')pot.fill(99);else if(k==='g')ADM.god=ADM.god?0:1;else if(k==='i')ADM.inf=ADM.inf?0:1;SS('bpp_adm',ADM);SS('bpp_pot',pot);save();try{renderShop()}catch(_){}admin()}}
-a.innerHTML=`<div class="mt">👑 ADMIN</div><div class="cr"><button data-a="m">💰<b>+1.000.000 🍌</b></button><button data-a="w">🔓<b>Alle Waffen</b></button><button data-a="p">🧪<b>Iksire ×99</b></button><button data-a="g">🛡️<b>Godmode ${ADM.god?'AN':'AUS'}</b></button><button data-a="i">♾️<b>Munition ${ADM.inf?'AN':'AUS'}</b></button></div>`}
-admin();try{window.BPP_Q(qa);renderShop()}catch(e){}
+// Alte lokale Admin-Oberfläche bewusst entfernt.
+try{window.BPP_Q(qa);renderShop()}catch(e){console.warn('MENU INIT:',e)}
 
 /* ---- Takt ---- */
 let LT=performance.now(),fr=0;(function lp(n){requestAnimationFrame(lp);const dt=Math.min(.05,(n-LT)/1000);LT=n;try{const p=ps[0],pl=state==='play';
@@ -5826,7 +5834,7 @@ console.log('BANANO KATMAN 2 aktiv');
       if (levelUps) writeNum('bpp_total_earned', readNum('bpp_total_earned') + levelUps * 100);
       save();
       updateLobbyXP();
-      refreshBPPProfile();
+      window.refreshBPPProfile?.();
     };
 
     /* A kill earns XP once, when a target first gets knocked out. */
@@ -5847,7 +5855,7 @@ console.log('BANANO KATMAN 2 aktiv');
       const before = me ? me.kills : 0;
       const result = oldOnKill.apply(this, arguments);
       if (me && me.kills > before) bppAddXP(35);
-      refreshBPPProfile();
+      window.refreshBPPProfile?.();
       return result;
     };
 
@@ -5858,7 +5866,7 @@ console.log('BANANO KATMAN 2 aktiv');
       const result = oldStep.apply(this, arguments);
       if (p === ps[0] && (p.deaths || 0) > previousDeaths) {
         writeNum('bpp_total_deaths', readNum('bpp_total_deaths') + (p.deaths - previousDeaths));
-        refreshBPPProfile();
+        window.refreshBPPProfile?.();
       }
       return result;
     };
@@ -5869,7 +5877,7 @@ console.log('BANANO KATMAN 2 aktiv');
       if (state === 'end') return;
       const result = oldEnd.apply(this, arguments);
       bppAddXP(ps[0] && ps[0].kills > 0 ? 100 : 60);
-      refreshBPPProfile();
+      window.refreshBPPProfile?.();
       return result;
     };
 
@@ -5896,7 +5904,7 @@ console.log('BANANO KATMAN 2 aktiv');
       } catch(e) { console.warn('BR ACHIEVEMENT PATCH:', e); }
       bppAddXP(win ? 250 : Math.max(50, 150 - (Number(place) || 10) * 8));
       updateLobbyXP();
-      refreshBPPProfile();
+      window.refreshBPPProfile?.();
       return result;
     };
 
@@ -5920,48 +5928,12 @@ console.log('BANANO KATMAN 2 aktiv');
     updateAchievements = function(){
       const result = oldUpdateAchievements.apply(this, arguments);
       updateLobbyXP();
-      refreshBPPProfile();
+      window.refreshBPPProfile?.();
       return result;
     };
 
-    /* Online 1v1 has a separate result screen; finalize its stats and stop its room. */
-    const oldFinish1v1 = finish1v1;
-    finish1v1 = function(){
-      const shouldFinalizeOnline = !!(V1 && online && state === 'play');
-      const a = ps[0];
-      const b = ps.length > 1 ? ps[1] : (Object.values(rp)[0] || {kills:0});
-      const won = !!a && (a.kills || 0) > (b.kills || 0);
-      const draw = !!a && (a.kills || 0) === (b.kills || 0);
-      const result = oldFinish1v1.apply(this, arguments);
-      if (shouldFinalizeOnline) {
-        state = 'end';
-        const matches = readNum('bpp_matches') + 1;
-        writeNum('bpp_matches', matches);
-        let wins = readNum('bpp_wins');
-        if (won) { wins++; writeNum('bpp_wins', wins); }
-        try {
-          achievements.forEach(item => {
-            const value = item.id === 8 || item.id === 9 ? matches : item.id === 10 ? wins : 0;
-            if (value >= item.target && !item.claimed) {
-              item.claimed = true;
-              SV.m += item.reward;
-              showToast('Erfolg freigeschaltet: ' + item.name + ' +' + item.reward + ' 🍌', 'good');
-            }
-          });
-          saveAchievements();
-          save();
-        } catch(e) { console.warn('1v1 STATS:', e); }
-        bppAddXP(draw ? 100 : won ? 180 : 90);
-        if (net) {
-          try { net.leave().catch(()=>{}); } catch(_) {}
-          net = null;
-        }
-        if (myFriendChannel) updateFriendPresence().catch(()=>{});
-        updateLobbyXP();
-        refreshBPPProfile();
-      }
-      return result;
-    };
+    /* finish1v1 is scoped inside the Visual+ IIFE. Do not reference it from this script;
+       doing so aborted this whole patch and left refreshBPPProfile undefined (death-loop crash). */
 
     /* ---------- Show all 18 weapons in Aim Assist settings ---------- */
     renderAimAssist = function(){
@@ -6100,7 +6072,7 @@ console.log('BANANO KATMAN 2 aktiv');
       panel.querySelector('.bpp-profile-close').onclick = close;
       panel.querySelector('.bpp-profile-done').onclick = close;
       panel.addEventListener('click', e => { if (e.target === panel) close(); });
-      refreshBPPProfile();
+      window.refreshBPPProfile?.();
     }
     const rankButton = $('brank');
     if (rankButton && !$('bppProfileButton')) {
@@ -6151,17 +6123,7 @@ console.log('BANANO KATMAN 2 aktiv');
       if (previous && previous !== world) disposeSceneGroup(previous);
       return result;
     };
-    const oldMakeDome = mkDome;
-    mkDome = function(){
-      const previous = dome;
-      const result = oldMakeDome.apply(this, arguments);
-      if (previous && previous !== dome) {
-        previous.geometry?.dispose?.();
-        if (Array.isArray(previous.material)) previous.material.forEach(m=>m.dispose?.());
-        else previous.material?.dispose?.();
-      }
-      return result;
-    };
+    /* mkDome/dome are private to the Visual+ IIFE; the visual layer manages its own dome. */
 
     /* ---------- Visual tune: richer but controlled lighting ---------- */
     rd.toneMappingExposure = 0.76;
@@ -6184,8 +6146,233 @@ console.log('BANANO KATMAN 2 aktiv');
       menuScene.add(fill);
     }
 
+    /* ---------- Secure Supabase Owner Admin panel ----------
+       Authorization is enforced by bpp_admin_list_players / bpp_admin_set_stats on the server.
+       No client-side owner flag, password, or service-role key is used. */
+    (function installServerAdminPanel(){
+      if (document.getElementById('bppAdminOpen')) return;
+      const style = document.createElement('style');
+      style.id = 'bppAdminStyles';
+      style.textContent = `
+        #bppAdminOpen{display:inline-flex;align-items:center;gap:7px;margin:8px;padding:10px 16px;border:1px solid #f4d46a;border-radius:12px;background:linear-gradient(135deg,#49320b,#1d2434);color:#ffe28a;font-weight:900;cursor:pointer;box-shadow:0 6px 20px #0006}
+        #bppAdminBackdrop{position:fixed;inset:0;z-index:1000002;display:none;place-items:center;padding:14px;box-sizing:border-box;background:#050811d9;backdrop-filter:blur(10px)}
+        #bppAdminCard{width:min(920px,96vw);max-height:92vh;overflow:auto;padding:20px;box-sizing:border-box;border:1px solid #d7ad45;border-radius:20px;background:linear-gradient(145deg,#202b40,#0c1320);color:#f6f7fb;box-shadow:0 24px 80px #000b;font-family:system-ui,sans-serif}
+        #bppAdminCard h2{margin:0;color:#ffda69;font-size:25px}#bppAdminCard .adm-sub{color:#aab7cc;font-size:12px;margin:4px 0 15px}
+        #bppAdminCard button{border:1px solid #65748d;border-radius:9px;padding:9px 13px;background:#26364d;color:#fff;font-weight:800;cursor:pointer}
+        #bppAdminCard button.primary{background:linear-gradient(135deg,#ffe36b,#ff9d2e);border:0;color:#241600}
+        #bppAdminCard button:disabled{opacity:.45;cursor:not-allowed}
+        #bppAdminCard input{min-width:0;box-sizing:border-box;width:100%;padding:10px;border:1px solid #64748b;border-radius:9px;background:#0c1422;color:#fff;font:inherit}
+        #bppAdminCard label{display:grid;gap:5px;color:#cbd5e1;font-size:12px;font-weight:700}
+        .bpp-adm-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+        .bpp-adm-tools{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;margin:14px 0}
+        #bppAdminStatus{min-height:22px;margin:7px 0;color:#ffdc78;font-size:13px;overflow-wrap:anywhere}
+        #bppAdminResults{display:grid;gap:7px;max-height:34vh;overflow:auto}
+        .bpp-adm-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:10px;border:1px solid #34435a;border-radius:10px;background:#111d2e}
+        .bpp-adm-row .uid{font:11px ui-monospace,monospace;overflow-wrap:anywhere;color:#c4d3e8}
+        .bpp-adm-row .num{font-size:12px;color:#ffdf88;white-space:nowrap}
+        #bppAdminEditor{display:none;margin-top:14px;padding:14px;border:1px solid #665b3f;border-radius:13px;background:#0c1422}
+        .bpp-adm-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}
+        .bpp-adm-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+        @media(max-width:640px){.bpp-adm-tools{grid-template-columns:1fr 1fr}.bpp-adm-tools input{grid-column:1/-1}.bpp-adm-row{grid-template-columns:1fr 1fr}.bpp-adm-row .uid{grid-column:1/-1}.bpp-adm-fields{grid-template-columns:1fr}}
+      `;
+      document.head.appendChild(style);
+
+      const openButton = document.createElement('button');
+      openButton.id = 'bppAdminOpen';
+      openButton.type = 'button';
+      openButton.textContent = '👑 OWNER ADMIN';
+      const friendButton = $('lobbyFriendsButton');
+      if (friendButton) friendButton.after(openButton);
+      else $('ov')?.appendChild(openButton);
+
+      const backdrop = document.createElement('div');
+      backdrop.id = 'bppAdminBackdrop';
+      backdrop.innerHTML = `
+        <section id="bppAdminCard" role="dialog" aria-modal="true" aria-labelledby="bppAdminTitle">
+          <div class="bpp-adm-top"><div><h2 id="bppAdminTitle">👑 OWNER ADMIN PANEL</h2><div class="adm-sub">Supabase-servergeprüfte Berechtigungen · kein lokaler Admin-Schalter</div></div><button id="bppAdminClose" type="button">✕</button></div>
+          <div class="bpp-adm-tools"><input id="bppAdminSearch" maxlength="64" autocomplete="off" placeholder="Spieler-ID suchen (UUID oder Teil davon)"><button id="bppAdminSearchBtn" class="primary" type="button">🔎 Suchen</button><button id="bppAdminAllBtn" type="button">Alle laden</button></div>
+          <div id="bppAdminStatus" role="status">Warte auf Admin-Prüfung …</div>
+          <div id="bppAdminResults"></div>
+          <section id="bppAdminEditor">
+            <div class="adm-sub">Ausgewählter Spieler</div>
+            <div id="bppAdminTarget" style="font:12px ui-monospace,monospace;overflow-wrap:anywhere;color:#d8e5f7"></div>
+            <div class="bpp-adm-fields">
+              <label>🍌 Bananen<input id="bppAdminBananas" type="number" min="0" max="9000000000000" step="1"></label>
+              <label>⭐ XP<input id="bppAdminXP" type="number" min="0" max="9000000000000" step="1"></label>
+              <label>🏆 Level<input id="bppAdminLevel" type="number" min="1" max="100" step="1"></label>
+            </div>
+            <div class="bpp-adm-actions"><button id="bppAdminSave" class="primary" type="button">💾 Änderungen speichern</button></div>
+          </section>
+          <div class="adm-sub" style="margin-top:14px">Hinweis: Spieler-Bans benötigen noch eine eigene serverseitige SQL-Funktion und sind deshalb hier noch nicht als scheinbarer Client-Schalter eingebaut.</div>
+        </section>`;
+      document.body.appendChild(backdrop);
+
+      const status = $('bppAdminStatus');
+      const results = $('bppAdminResults');
+      const editor = $('bppAdminEditor');
+      let selected = null;
+      let authorized = false;
+      let busy = false;
+      const getVal = (obj, keys, fallback=0) => {
+        for (const key of keys) if (obj && obj[key] !== undefined && obj[key] !== null) return obj[key];
+        return fallback;
+      };
+      const showStatus = (message, ok=false) => {
+        status.textContent = message;
+        status.style.color = ok ? '#9ff0ad' : '#ffdc78';
+      };
+      const asRows = data => {
+        if (Array.isArray(data)) return data;
+        if (Array.isArray(data?.players)) return data.players;
+        if (Array.isArray(data?.rows)) return data.rows;
+        return data && typeof data === 'object' ? [data] : [];
+      };
+      function selectPlayer(row){
+        selected = row;
+        const id = String(getVal(row,['user_id','player_id','target_id','id'],''));
+        if (!id) return;
+        $('bppAdminTarget').textContent = id;
+        $('bppAdminBananas').value = String(getVal(row,['bananas','coins'],0));
+        $('bppAdminXP').value = String(getVal(row,['xp','experience'],0));
+        $('bppAdminLevel').value = String(getVal(row,['level'],1));
+        editor.style.display = 'block';
+      }
+      function renderRows(rows){
+        results.textContent = '';
+        if (!rows.length){
+          const empty = document.createElement('div');
+          empty.textContent = 'Keine Spieler gefunden.';
+          empty.style.cssText = 'padding:12px;color:#aebbd0';
+          results.appendChild(empty);
+          editor.style.display = 'none';
+          selected = null;
+          return;
+        }
+        rows.forEach(row=>{
+          const id = String(getVal(row,['user_id','player_id','target_id','id'],''));
+          if (!id) return;
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'bpp-adm-row';
+          const uid = document.createElement('span');
+          uid.className = 'uid'; uid.textContent = id;
+          const coins = document.createElement('span');
+          coins.className = 'num'; coins.textContent = '🍌 ' + Number(getVal(row,['bananas','coins'],0)).toLocaleString('de-DE');
+          const xp = document.createElement('span');
+          xp.className = 'num'; xp.textContent = '⭐ ' + Number(getVal(row,['xp','experience'],0)).toLocaleString('de-DE') + ' XP';
+          const level = document.createElement('span');
+          level.className = 'num'; level.textContent = 'Lv. ' + Number(getVal(row,['level'],1));
+          item.append(uid,coins,xp,level);
+          item.addEventListener('click',()=>selectPlayer(row));
+          results.appendChild(item);
+        });
+      }
+      async function loadPlayers(){
+        if (busy) return;
+        busy = true;
+        $('bppAdminSearchBtn').disabled = $('bppAdminAllBtn').disabled = true;
+        showStatus('Spielerliste wird sicher vom Server geladen …');
+        try {
+          const term = $('bppAdminSearch').value.trim();
+          const {data,error} = await sb.rpc('bpp_admin_list_players',{p_search:term||null});
+          if (error) throw error;
+          const rows = asRows(data);
+          renderRows(rows);
+          authorized = true;
+          showStatus(rows.length + ' Spieler geladen.',true);
+          return true;
+        } catch(error) {
+          console.error('BPP ADMIN LIST ERROR:',error);
+          renderRows([]);
+          showStatus('Admin-Abfrage fehlgeschlagen: ' + (error?.message || String(error)));
+          authorized = false;
+          return false;
+        } finally {
+          busy = false;
+          $('bppAdminSearchBtn').disabled = $('bppAdminAllBtn').disabled = false;
+        }
+      }
+      async function openPanel(){
+        backdrop.style.display = 'grid';
+        editor.style.display = 'none';
+        results.textContent = '';
+        selected = null;
+        showStatus('Anmeldung und Owner-Rechte werden geprüft …');
+        try {
+          const ok = await initBPPAuth();
+          if (!ok || !BPP_USER?.id) throw new Error('Kein angemeldeter Spieler.');
+          const userLabel = document.createElement('div');
+          userLabel.textContent = 'Angemeldet als: ' + BPP_USER.id;
+          userLabel.style.cssText = 'font:11px ui-monospace,monospace;color:#9fb0c8;margin:5px 0 10px;overflow-wrap:anywhere';
+          const old = $('bppAdminUser');
+          if (old) old.remove();
+          userLabel.id = 'bppAdminUser';
+          $('bppAdminTitle').after(userLabel);
+          const hasServerAdminAccess = await loadPlayers();
+          if (!hasServerAdminAccess) throw new Error('Dein Konto wurde von der Serverfunktion nicht als Admin bestätigt.');
+        } catch(error) {
+          console.error('BPP ADMIN AUTH ERROR:',error);
+          showStatus('Zugriff verweigert oder Anmeldung fehlgeschlagen. Die Admin-RPC-Funktion muss dich serverseitig als Owner/Admin erkennen. ' + (error?.message || ''));
+          authorized = false;
+        }
+      }
+      async function saveStats(){
+        if (!authorized || !selected || busy) return;
+        const target = String(getVal(selected,['user_id','player_id','target_id','id'],''));
+        const bananas = Number($('bppAdminBananas').value);
+        const xp = Number($('bppAdminXP').value);
+        const level = Number($('bppAdminLevel').value);
+        if (!target || !Number.isSafeInteger(bananas) || bananas < 0 || bananas > 9000000000000 ||
+            !Number.isSafeInteger(xp) || xp < 0 || xp > 9000000000000 ||
+            !Number.isInteger(level) || level < 1 || level > 100) {
+          showStatus('Ungültige Werte. Bananen und XP müssen ganze, nicht-negative Zahlen sein; Level 1–100.');
+          return;
+        }
+        busy = true;
+        $('bppAdminSave').disabled = true;
+        showStatus('Änderungen werden serverseitig gespeichert …');
+        try {
+          const {error} = await sb.rpc('bpp_admin_set_stats',{
+            p_target:target,
+            p_bananas:bananas,
+            p_xp:xp,
+            p_level:level
+          });
+          if (error) throw error;
+          if (BPP_USER?.id === target) {
+            SV.m = bananas;
+            BPP_XP = xp;
+            BPP_Level = level;
+            save();
+            bppSaveLevel();
+            updateLobbyXP();
+            window.refreshBPPProfile?.();
+          }
+          showStatus('Gespeichert! Server-Profil von ' + target + ' wurde aktualisiert.',true);
+          busy = false;
+          $('bppAdminSave').disabled = false;
+          await loadPlayers();
+          const found = asRows((await sb.rpc('bpp_admin_list_players',{p_search:target})).data).find(r=>String(getVal(r,['user_id','player_id','target_id','id'],''))===target);
+          if (found) selectPlayer(found);
+        } catch(error) {
+          console.error('BPP ADMIN SAVE ERROR:',error);
+          showStatus('Speichern fehlgeschlagen: ' + (error?.message || String(error)));
+        } finally {
+          busy = false;
+          $('bppAdminSave').disabled = false;
+        }
+      }
+      openButton.addEventListener('click',openPanel);
+      $('bppAdminClose').addEventListener('click',()=>backdrop.style.display='none');
+      backdrop.addEventListener('click',e=>{if(e.target===backdrop)backdrop.style.display='none'});
+      $('bppAdminSearchBtn').addEventListener('click',loadPlayers);
+      $('bppAdminAllBtn').addEventListener('click',()=>{$('bppAdminSearch').value='';loadPlayers()});
+      $('bppAdminSearch').addEventListener('keydown',e=>{if(e.key==='Enter')loadPlayers()});
+      $('bppAdminSave').addEventListener('click',saveStats);
+    })();
+
     updateLobbyXP();
-    console.log('BANANO QUALITY PATCH: progression, profile, cleanup and UI ready');
+    console.log('BANANO QUALITY PATCH: progression, profile, cleanup, UI and server admin ready');
   } catch (error) {
     console.error('BANANO QUALITY PATCH ERROR:', error);
   }
