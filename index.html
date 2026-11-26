@@ -4770,7 +4770,9 @@ async function bppLoadServerProfile(){
     if(xp!==undefined && Number.isFinite(Number(xp))) BPP_XP=Math.max(0,Math.floor(Number(xp)));
     if(level!==undefined && Number.isFinite(Number(level))) BPP_Level=Math.max(1,Math.min(100,Math.floor(Number(level))));
     if(xp!==undefined || level!==undefined){bppSaveLevel(); if(typeof updateLobbyXP==='function')updateLobbyXP();}
-    console.log('BPP SERVER PROFILE LOADED:',{bananas:SV.m,xp:BPP_XP,level:BPP_Level});
+    const username=pick(['username','player_name','display_name']);
+    window.BPP_USERNAME=username?String(username):'';
+    console.log('BPP SERVER PROFILE LOADED:',{bananas:SV.m,xp:BPP_XP,level:BPP_Level,username:window.BPP_USERNAME});
     return true;
   }catch(e){console.warn('BPP SERVER PROFILE LOAD FAILED:',e);return false;}
 }
@@ -4796,6 +4798,33 @@ async function initBPPAuth() {
   }
   console.log('BPP USER:', BPP_USER.id);
   await bppLoadServerProfile();
+  // Read username through a dedicated authenticated RPC (profile RPC may omit the new column).
+  try{
+    const nameResult=await sb.rpc('bpp_get_my_username');
+    if(!nameResult.error && nameResult.data) window.BPP_USERNAME=String(nameResult.data);
+  }catch(e){console.warn('USERNAME LOOKUP:',e)}
+  // Existing and new players must choose a unique public username once.
+  if(!window.BPP_USERNAME){
+    let chosen='';
+    while(!chosen){
+      const answer=window.prompt('Willkommen bei Banano Pew Pew!\nWähle deinen Spielernamen (3–16 Zeichen: a-z, 0-9, _).');
+      if(answer===null){
+        showToast?.('Bitte wähle einen Spielernamen, um fortzufahren.','warn');
+        return false;
+      }
+      chosen=String(answer).trim().toLowerCase();
+      if(!/^[a-z0-9_]{3,16}$/.test(chosen)){
+        alert('Ungültiger Name. Erlaubt sind 3–16 Zeichen: a-z, 0-9 und _.');
+        chosen=''; continue;
+      }
+      const {data,error}=await sb.rpc('bpp_set_username',{p_username:chosen});
+      if(error){
+        alert(error.message.includes('duplicate')||error.message.includes('unique')?'Dieser Name ist bereits vergeben. Bitte wähle einen anderen.':'Name konnte nicht gespeichert werden: '+error.message);
+        chosen=''; continue;
+      }
+      window.BPP_USERNAME=chosen;
+    }
+  }
   return true;
 }
 console.log('SUPABASE READY:', !!sb);
@@ -6220,6 +6249,7 @@ console.log('BANANO KATMAN 2 aktiv');
           <section id="bppAdminEditor">
             <div class="adm-sub">Ausgewählter Spieler</div>
             <div id="bppAdminTarget" style="font:12px ui-monospace,monospace;overflow-wrap:anywhere;color:#d8e5f7"></div>
+            <label style="display:grid;gap:5px;margin-top:10px">👤 Spielername ändern<input id="bppAdminUsername" maxlength="16" autocomplete="off" placeholder="3–16 Zeichen: a-z, 0-9, _"></label>
             <div class="bpp-adm-fields">
               <label>🍌 Bananen<input id="bppAdminBananas" type="number" min="0" max="9000000000000" step="1"></label>
               <label>⭐ XP<input id="bppAdminXP" type="number" min="0" max="9000000000000" step="1"></label>
@@ -6255,7 +6285,8 @@ console.log('BANANO KATMAN 2 aktiv');
         selected = row;
         const id = String(getVal(row,['user_id','player_id','target_id','id'],''));
         if (!id) return;
-        $('bppAdminTarget').textContent = id;
+        $('bppAdminTarget').textContent = (getVal(row,['username'],'Kein Name'))+' · '+id;
+        $('bppAdminUsername').value = String(getVal(row,['username'],''));
         $('bppAdminBananas').value = String(getVal(row,['bananas','coins'],0));
         $('bppAdminXP').value = String(getVal(row,['xp','experience'],0));
         $('bppAdminLevel').value = String(getVal(row,['level'],1));
@@ -6279,7 +6310,7 @@ console.log('BANANO KATMAN 2 aktiv');
           item.type = 'button';
           item.className = 'bpp-adm-row';
           const uid = document.createElement('span');
-          uid.className = 'uid'; uid.textContent = id;
+          uid.className = 'uid'; uid.textContent = (getVal(row,['username'],'(kein Name)'))+' · '+id;
           const coins = document.createElement('span');
           coins.className = 'num'; coins.textContent = '🍌 ' + Number(getVal(row,['bananas','coins'],0)).toLocaleString('de-DE');
           const xp = document.createElement('span');
@@ -6298,7 +6329,7 @@ console.log('BANANO KATMAN 2 aktiv');
         showStatus('Spielerliste wird sicher vom Server geladen …');
         try {
           const term = $('bppAdminSearch').value.trim();
-          const {data,error} = await sb.rpc('bpp_admin_list_players',{p_search:term||null});
+          const {data,error} = term ? await sb.rpc('bpp_admin_find_player',{p_search:term}) : await sb.rpc('bpp_admin_list_players',{p_search:null});
           if (error) throw error;
           const rows = asRows(data);
           renderRows(rows);
@@ -6356,6 +6387,12 @@ console.log('BANANO KATMAN 2 aktiv');
         $('bppAdminSave').disabled = true;
         showStatus('Änderungen werden serverseitig gespeichert …');
         try {
+          const newUsername=String($('bppAdminUsername').value||'').trim().toLowerCase();
+          if(newUsername!==String(getVal(selected,['username'],''))){
+            if(!/^[a-z0-9_]{3,16}$/.test(newUsername)) throw new Error('Spielername muss 3–16 Zeichen haben (a-z, 0-9, _).');
+            const rename=await sb.rpc('bpp_admin_set_username',{p_target:target,p_username:newUsername});
+            if(rename.error) throw rename.error;
+          }
           const {error} = await sb.rpc('bpp_admin_set_stats',{
             p_target:target,
             p_bananas:bananas,
