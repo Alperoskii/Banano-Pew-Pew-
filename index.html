@@ -4748,6 +4748,33 @@ async function watchFriendPresence(uid){
   channel.subscribe();
 }
 
+async function bppLoadServerProfile(){
+  if(!BPP_USER?.id || !sb) return false;
+  try{
+    const {data,error}=await sb.rpc('bpp_get_my_profile');
+    if(error) throw error;
+    let row=Array.isArray(data)?data[0]:data;
+    if(typeof row==='string'){try{row=JSON.parse(row)}catch(_){}}
+    if(!row || typeof row!=='object') return false;
+    const pick=(keys)=>{for(const k of keys){if(row[k]!==undefined&&row[k]!==null)return row[k]}return undefined};
+    const bananas=pick(['bananas','m','coins']);
+    const xp=pick(['xp','experience']);
+    const level=pick(['level','lvl']);
+    if(bananas!==undefined && Number.isFinite(Number(bananas))){
+      SV.m=Math.max(0,Math.floor(Number(bananas)));
+      save();
+      const mo=document.getElementById('mo'); if(mo)mo.textContent=SV.m.toLocaleString('de-DE');
+      const balance=document.querySelector('.shopBalance'); if(balance)balance.textContent='🍌 '+SV.m.toLocaleString('de-DE');
+      const coins=document.getElementById('lobbyCoins'); if(coins)coins.textContent=SV.m.toLocaleString('de-DE');
+    }
+    if(xp!==undefined && Number.isFinite(Number(xp))) BPP_XP=Math.max(0,Math.floor(Number(xp)));
+    if(level!==undefined && Number.isFinite(Number(level))) BPP_Level=Math.max(1,Math.min(100,Math.floor(Number(level))));
+    if(xp!==undefined || level!==undefined){bppSaveLevel(); if(typeof updateLobbyXP==='function')updateLobbyXP();}
+    console.log('BPP SERVER PROFILE LOADED:',{bananas:SV.m,xp:BPP_XP,level:BPP_Level});
+    return true;
+  }catch(e){console.warn('BPP SERVER PROFILE LOAD FAILED:',e);return false;}
+}
+
 async function initBPPAuth() {
   const { data: sessionData, error: sessionError } =
     await sb.auth.getSession();
@@ -4759,19 +4786,16 @@ async function initBPPAuth() {
 
   if (sessionData.session) {
     BPP_USER = sessionData.session.user;
-    console.log('BPP USER:', BPP_USER.id);
-    return true;
+  } else {
+    const { data, error } = await sb.auth.signInAnonymously();
+    if (error) {
+      console.error('AUTH FEHLER:', error);
+      return false;
+    }
+    BPP_USER = data.user;
   }
-
-  const { data, error } = await sb.auth.signInAnonymously();
-
-  if (error) {
-    console.error('AUTH FEHLER:', error);
-    return false;
-  }
-
-  BPP_USER = data.user;
   console.log('BPP USER:', BPP_USER.id);
+  await bppLoadServerProfile();
   return true;
 }
 console.log('SUPABASE READY:', !!sb);
@@ -6348,7 +6372,7 @@ console.log('BANANO KATMAN 2 aktiv');
             updateLobbyXP();
             window.refreshBPPProfile?.();
           }
-          showStatus('Gespeichert! Server-Profil von ' + target + ' wurde aktualisiert.',true);
+          showStatus('Gespeichert! Server-Profil von ' + target + ' wurde aktualisiert. Der Spieler sieht den neuen Stand beim nächsten Online-Start.',true);
           busy = false;
           $('bppAdminSave').disabled = false;
           await loadPlayers();
