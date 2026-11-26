@@ -4753,6 +4753,16 @@ async function bppLoadServerProfile(){
   try{
     const {data,error}=await sb.rpc('bpp_get_my_profile');
     if(error) throw error;
+    // Weapon ownership is loaded from its own server RPC, not trusted from localStorage.
+    try{
+      const weaponResult=await sb.rpc('bpp_get_my_weapons');
+      if(!weaponResult.error){
+        const owned=Array.isArray(weaponResult.data)?weaponResult.data:(weaponResult.data?.weapons||[]);
+        if(owned.length){SV.w=[0,...new Set(owned.map(Number).filter(n=>Number.isInteger(n)&&n>0))];}
+        else SV.w=[0];
+        save();
+      }else console.warn('SERVER WEAPONS LOAD:',weaponResult.error);
+    }catch(weaponError){console.warn('SERVER WEAPONS LOAD:',weaponError)}
     let row=Array.isArray(data)?data[0]:data;
     if(typeof row==='string'){try{row=JSON.parse(row)}catch(_){}}
     if(!row || typeof row!=='object') return false;
@@ -4965,11 +4975,19 @@ function renderShop(){
 
   renderTab();
 }
+async function bppSaveWeaponsToServer(){
+  if(!BPP_USER?.id||!sb)return;
+  try{
+    const {error}=await sb.rpc('bpp_save_my_weapons',{p_weapons:SV.w.filter(n=>Number.isInteger(n)&&n>0)});
+    if(error)throw error;
+  }catch(e){console.warn('WEAPON SAVE FAILED:',e);showToast?.('Waffen konnten nicht mit dem Server synchronisiert werden.','warn')}
+}
 function shop(k){
   const [ty,i]=k.split(':'),n=+i;
-  if(ty==='w'&&WP[n]&&!own(n)&&SV.m>=WPR[n]){SV.m-=WPR[n];SV.w.push(n);sfx('buy')}
+  let boughtWeapon=false;
+  if(ty==='w'&&WP[n]&&!own(n)&&SV.m>=WPR[n]){SV.m-=WPR[n];SV.w.push(n);sfx('buy');boughtWeapon=true}
   if(ty==='s'&&SK[n]){if(SV.s.includes(n))SV.sk=n;else if(SV.m>=SK[n].p){SV.m-=SK[n].p;SV.s.push(n);SV.sk=n;sfx('buy')}}
-  save();renderShop();
+  save();if(boughtWeapon)bppSaveWeaponsToServer();renderShop();
 }
 // ===== BANANO XP & LEVEL SYSTEM =====
 let BPP_Level = 1;
@@ -6257,7 +6275,13 @@ console.log('BANANO KATMAN 2 aktiv');
             </div>
             <div class="bpp-adm-actions"><button id="bppAdminSave" class="primary" type="button">💾 Änderungen speichern</button></div>
           </section>
-          <div class="adm-sub" style="margin-top:14px">Hinweis: Spieler-Bans benötigen noch eine eigene serverseitige SQL-Funktion und sind deshalb hier noch nicht als scheinbarer Client-Schalter eingebaut.</div>
+          <section id="bppAdminSpecial" style="display:none;margin-top:16px;padding:14px;border:1px solid #8b5cf6;border-radius:13px;background:#17142a">
+            <h3 style="margin:0 0 5px;color:#d8b4fe">🛠️ SPEZIELLE ADMIN-BEFEHLE</h3>
+            <div class="adm-sub">Nur sichere, festgelegte Admin-Befehle. Hier wird kein beliebiger JavaScript-Code ausgeführt.</div>
+            <label>Admin-Befehl<input id="bppAdminCommand" maxlength="40" autocomplete="off" placeholder="RESET_WEAPONS"></label>
+            <div class="bpp-adm-actions" style="margin-top:9px"><button id="bppAdminRunCommand" class="primary" type="button">▶ Befehl ausführen</button></div>
+          </section>
+          <div class="adm-sub" style="margin-top:14px">Spieler-Bans benötigen noch eine eigene serverseitige SQL-Funktion.</div>
         </section>`;
       document.body.appendChild(backdrop);
 
@@ -6291,6 +6315,8 @@ console.log('BANANO KATMAN 2 aktiv');
         $('bppAdminXP').value = String(getVal(row,['xp','experience'],0));
         $('bppAdminLevel').value = String(getVal(row,['level'],1));
         editor.style.display = 'block';
+        $('bppAdminSpecial').style.display='block';
+        $('bppAdminCommand').value='';
       }
       function renderRows(rows){
         results.textContent = '';
@@ -6300,6 +6326,7 @@ console.log('BANANO KATMAN 2 aktiv');
           empty.style.cssText = 'padding:12px;color:#aebbd0';
           results.appendChild(empty);
           editor.style.display = 'none';
+          $('bppAdminSpecial').style.display='none';
           selected = null;
           return;
         }
@@ -6350,6 +6377,7 @@ console.log('BANANO KATMAN 2 aktiv');
       async function openPanel(){
         backdrop.style.display = 'grid';
         editor.style.display = 'none';
+        $('bppAdminSpecial').style.display='none';
         results.textContent = '';
         selected = null;
         showStatus('Anmeldung und Owner-Rechte werden geprüft …');
@@ -6423,6 +6451,30 @@ console.log('BANANO KATMAN 2 aktiv');
           $('bppAdminSave').disabled = false;
         }
       }
+      async function runAdminCommand(){
+        if(!authorized||!selected||busy)return;
+        const command=String($('bppAdminCommand').value||'').trim().toUpperCase();
+        if(command!=='RESET_WEAPONS'){
+          showStatus('Unbekannter Befehl. Erlaubt ist derzeit: RESET_WEAPONS');return;
+        }
+        const target=String(getVal(selected,['user_id','player_id','target_id','id'],''));
+        if(!target)return;
+        if(!confirm('Alle gekauften Waffen von '+String(getVal(selected,['username'],'diesem Spieler'))+' zurücksetzen?'))return;
+        busy=true;$('bppAdminRunCommand').disabled=true;
+        showStatus('Waffen-Inventar wird serverseitig zurückgesetzt …');
+        try{
+          const {data,error}=await sb.rpc('bpp_admin_reset_weapons',{p_target:target});
+          if(error)throw error;
+          if(BPP_USER?.id===target){SV.w=[0];save();renderShop();}
+          showStatus('Erledigt! Waffen wurden zurückgesetzt. Der Spieler erhält die Änderung beim nächsten Online-Start.',true);
+          $('bppAdminCommand').value='';
+        }catch(e){
+          console.error('ADMIN COMMAND ERROR:',e);
+          showStatus('Befehl fehlgeschlagen: '+(e?.message||String(e)));
+        }finally{busy=false;$('bppAdminRunCommand').disabled=false;}
+      }
+      $('bppAdminRunCommand').addEventListener('click',runAdminCommand);
+      $('bppAdminCommand').addEventListener('keydown',e=>{if(e.key==='Enter')runAdminCommand()});
       openButton.addEventListener('click',openPanel);
       $('bppAdminClose').addEventListener('click',()=>backdrop.style.display='none');
       backdrop.addEventListener('click',e=>{if(e.target===backdrop)backdrop.style.display='none'});
